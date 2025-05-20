@@ -8,11 +8,6 @@ class Conversation extends Model
 {
     protected $fillable = ['user_one_id', 'user_two_id'];
 
-    public function chats()
-    {
-        return $this->hasMany(Chat::class);
-    }
-
     public function userOne()
     {
         return $this->belongsTo(User::class, 'user_one_id');
@@ -21,5 +16,10 @@ class Conversation extends Model
     public function userTwo()
     {
         return $this->belongsTo(User::class, 'user_two_id');
+    }
+
+    public function chats()
+    {
+        return $this->hasMany(Chat::class);
     }
 }
