@@ -218,7 +218,7 @@
                         data.conversation.user_two?.name || 'Unknown User' :
                         data.conversation.user_one?.name || 'Unknown User';
 
-                    chatHeader.textContent = `Chat with ${otherName}`;
+                    chatHeader.textContent = ` ${otherName}`;
 
                     chatMessages.innerHTML = data.messages.map(m =>
                         createMessageBubble(m.message, m.sender.name, m.sender_id === authUserId)
