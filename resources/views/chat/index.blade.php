@@ -1,40 +1,121 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="container flex">
-    <div class="w-1/4 border-r h-screen overflow-auto p-4">
-        <input type="text" id="user-search" placeholder="Search users..." class="w-full p-2 border rounded" />
-        <ul id="search-results" class="mt-2"></ul>
+<div class="container-fluid vh-100 d-flex p-3 bg-light">
+    <!-- Sidebar: Users & Search -->
+    <div class="border-end bg-white" style="width: 320px; height: 100vh; overflow-y: auto; padding: 1rem;">
+        <div class="mb-3">
+            <input
+                type="text"
+                id="user-search"
+                placeholder="Search users..."
+                class="form-control"
+                autocomplete="off" />
+            <ul id="search-results" class="list-group mt-2 shadow-sm"></ul>
+        </div>
 
-        <h3 class="mt-6 font-bold">Conversations</h3>
-        <ul id="conversation-list" class="mt-2">
+        <h5 class="fw-bold text-secondary mb-3">Conversations</h5>
+        <ul id="conversation-list" class="list-group">
             @foreach($conversations as $conversation)
             @php
             $otherUser = $conversation->user_one_id == auth()->id() ? $conversation->userTwo : $conversation->userOne;
             @endphp
-            <li data-id="{{ $otherUser->id }}" class="cursor-pointer p-2 border-b hover:bg-gray-100">
-                {{ $otherUser->name }} ({{ $otherUser->email }})
+            <li
+                id="conversation-{{ $conversation->id }}"
+                data-id="{{ $otherUser->id }}"
+                data-conversation-id="{{ $conversation->id }}"
+                class="list-group-item d-flex align-items-center justify-content-between"
+                style="cursor:pointer;">
+
+                <div class="d-flex align-items-center">
+                    <div class="position-relative me-3">
+                        <div class="rounded-circle bg-primary text-white d-flex justify-content-center align-items-center" style="width:40px; height:40px; font-weight:600;">
+                            {{ strtoupper(substr($otherUser->name, 0, 1)) }}
+                        </div>
+                        <span class="position-absolute bottom-0 end-0 rounded-circle online-indicator bg-secondary" style="width:12px; height:12px; border: 2px solid white;"></span>
+                    </div>
+                    <div>
+                        <div class="fw-semibold">{{ $otherUser->name }}</div>
+                        <small class="text-muted last-message" style="max-width: 200px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                            {{ $conversation->chats->last()?->message ?? 'No messages yet' }}
+                        </small>
+                    </div>
+                </div>
+
+                <small class="text-muted ms-2 last-message-time" style="white-space: nowrap;">
+                    {{ $conversation->chats->last()?->created_at?->diffForHumans() ?? '' }}
+                </small>
             </li>
             @endforeach
         </ul>
+
+
     </div>
 
-    <div class="w-3/4 h-screen flex flex-col p-4">
-        <div id="chat-header" class="p-4 border-b font-bold">Select a conversation</div>
-        <div id="chat-messages" class="flex-1 overflow-auto p-4 border rounded bg-white"></div>
+    <!-- Chat Area -->
+    <div class="flex-grow-1 d-flex flex-column ms-4 bg-white rounded shadow" style="height: 100vh;">
+        <div
+            id="chat-header"
+            class="p-3 border-bottom fw-bold fs-5 text-primary"
+            style="min-height: 60px;">
+            Select a conversation
+        </div>
 
-        <form id="chat-form" class="p-4 border-t hidden flex space-x-2" autocomplete="off">
+        <div
+            id="chat-messages"
+            class="flex-grow-1 overflow-auto p-4"
+            style="min-height: 0; background: #f8f9fa;">
+            <!-- Messages will appear here -->
+        </div>
+
+        <form
+            id="chat-form"
+            class="d-flex border-top p-3 gap-3 align-items-center"
+            autocomplete="off"
+            style="display: none;">
             <input type="hidden" id="conversation_id" />
-            <input type="text" id="chat-input" placeholder="Type your message..." class="flex-grow p-2 border rounded" />
-            <button type="submit" class="px-4 py-2 bg-indigo-600 text-white rounded">Send</button>
+
+            <input
+                type="text"
+                id="chat-input"
+                placeholder="Type your message..."
+                class="form-control rounded-pill"
+                style="padding-left: 20px; padding-right: 20px;" />
+
+            <button type="submit" class="btn btn-primary rounded-pill px-4">
+                Send
+            </button>
         </form>
     </div>
 </div>
 @endsection
 
 @section('scripts')
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/relativeTime.js"></script>
 <script>
+    dayjs.extend(dayjs_plugin_relativeTime);
+
     const authUserId = @json(auth()->id());
+
+    function formatRelativeTime(timestamp) {
+        return dayjs(timestamp).fromNow();
+    }
+
+    function createMessageBubble(message, senderName, isOwn) {
+        return `
+        <div class="d-flex ${isOwn ? 'justify-content-end' : 'justify-content-start'} mb-3">
+          <div class="p-3 rounded" style="
+            max-width: 65%;
+            background-color: ${isOwn ? '#0d6efd' : '#e9ecef'};
+            color: ${isOwn ? 'white' : 'black'};
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border-radius: 15px;">
+            <div>${message}</div>
+          </div>
+        </div>
+      `;
+    }
 
     document.addEventListener('DOMContentLoaded', function() {
         const searchInput = document.getElementById('user-search');
@@ -46,7 +127,7 @@
         const chatInput = document.getElementById('chat-input');
         const conversationIdInput = document.getElementById('conversation_id');
 
-        let activeUserId = null;
+        let currentChannel = null;
 
         // Search users dynamically
         searchInput.addEventListener('input', function() {
@@ -56,89 +137,101 @@
                 return;
             }
             fetch(`/chat/search?q=${encodeURIComponent(query)}`)
-                .then(res => {
-                    if (!res.ok) throw new Error('Network response was not ok');
-                    return res.json();
-                })
+                .then(res => res.json())
                 .then(users => {
                     searchResults.innerHTML = users.map(user => `
-                        <li data-id="${user.id}" class="cursor-pointer p-2 border-b hover:bg-gray-100">
-                            ${user.name} (${user.email})
-                        </li>
-                    `).join('');
-                })
-                .catch(err => {
-                    console.error('Search fetch error:', err);
+          <li data-id="${user.id}" class="list-group-item list-group-item-action d-flex align-items-center" style="cursor:pointer;">
+            <div class="rounded-circle bg-primary text-white d-flex justify-content-center align-items-center me-3" style="width:35px; height:35px; font-weight:600;">
+              ${user.name.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <div class="fw-semibold">${user.name}</div>
+            </div>
+          </li>
+        `).join('');
                 });
         });
 
-        // Click on user search result to start/continue chat
+        // Clicking on a user from search to start chat
         searchResults.addEventListener('click', function(e) {
-            if (e.target.tagName === 'LI') {
-                let userId = e.target.getAttribute('data-id');
-                startConversation(userId);
-                searchResults.innerHTML = '';
-                searchInput.value = '';
-            }
+            const li = e.target.closest('li');
+            if (!li) return;
+            startConversation(li.dataset.id);
+            searchResults.innerHTML = '';
+            searchInput.value = '';
         });
 
-
-        // Click on conversation in list
+        // Clicking on a conversation in the list
         conversationList.addEventListener('click', function(e) {
             const li = e.target.closest('li');
-            if (li && conversationList.contains(li)) {
-                let userId = li.getAttribute('data-id');
-                startConversation(userId);
-            }
+            if (!li) return;
+            startConversation(li.dataset.id);
         });
 
+        function subscribeToConversation(conversationId) {
+            if (currentChannel) {
+                currentChannel.unsubscribe();
+            }
 
-        // Load conversation messages
+            currentChannel = window.Echo.private(`conversation.${conversationId}`);
+
+            currentChannel.listen('MessageSent', (e) => {
+                if (e.sender_id !== authUserId) {
+                    chatMessages.innerHTML += createMessageBubble(e.message, e.sender.name, false);
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                }
+
+                const li = document.getElementById(`conversation-${e.conversation_id}`);
+                if (li) {
+                    const lastMsgElem = li.querySelector('.last-message');
+                    const lastMsgTimeElem = li.querySelector('.last-message-time');
+
+                    if (lastMsgElem) {
+                        lastMsgElem.textContent = e.message.length > 40 ? e.message.substring(0, 40) + '...' : e.message;
+                    }
+                    if (lastMsgTimeElem) {
+                        lastMsgTimeElem.textContent = 'Just now';
+                    }
+
+                    const parent = li.parentNode;
+                    if (parent.firstChild !== li) {
+                        parent.insertBefore(li, parent.firstChild);
+                    }
+                }
+            });
+        }
+
         function startConversation(userId) {
-            console.log("Start conversation with userId:", userId);
-
             fetch(`/chat/conversation/${userId}`)
-                .then(res => {
-                    console.log("Response status:", res.status);
-                    return res.json();
-                })
+                .then(res => res.json())
                 .then(data => {
-                    console.log("Conversation data:", data);
-
                     if (!data.conversation) {
                         chatHeader.textContent = "No conversation found.";
                         chatMessages.innerHTML = "";
-                        chatForm.classList.add('hidden');
+                        chatForm.style.display = 'none';
                         return;
                     }
 
                     conversationIdInput.value = data.conversation.id;
 
-                    const otherName = data.conversation.user_one_id == authUserId ?
-                        data.conversation.userTwo?.name :
-                        data.conversation.userOne?.name;
+                    const otherName = data.conversation.user_one_id === authUserId ?
+                        data.conversation.user_two?.name || 'Unknown User' :
+                        data.conversation.user_one?.name || 'Unknown User';
 
-                    chatHeader.textContent = `Chat with ${otherName || 'Unknown User'}`;
+                    chatHeader.textContent = `Chat with ${otherName}`;
 
-                    chatMessages.innerHTML = data.messages.map(m => `
-                <div class="${m.sender_id == authUserId ? 'text-right' : 'text-left'} mb-2">
-                    <strong>${m.sender.name}</strong>: ${m.message}
-                </div>
-            `).join('');
+                    chatMessages.innerHTML = data.messages.map(m =>
+                        createMessageBubble(m.message, m.sender.name, m.sender_id === authUserId)
+                    ).join('');
 
-                    chatForm.classList.remove('hidden');
+                    chatForm.style.display = 'flex';
                     chatMessages.scrollTop = chatMessages.scrollHeight;
-                })
-                .catch(err => {
-                    console.error("Error fetching conversation:", err);
-                    chatHeader.textContent = "Error loading conversation.";
-                    chatMessages.innerHTML = "";
-                    chatForm.classList.add('hidden');
+
+                    // Subscribe to real-time updates for this conversation
+                    subscribeToConversation(data.conversation.id);
                 });
         }
 
-
-        // Send message
         chatForm.addEventListener('submit', function(e) {
             e.preventDefault();
             let message = chatInput.value.trim();
@@ -156,13 +249,29 @@
                     })
                 }).then(res => res.json())
                 .then(chat => {
-                    chatMessages.innerHTML += `
-                    <div class="text-right mb-2">
-                        <strong>You</strong>: ${chat.message}
-                    </div>
-                `;
+                    chatMessages.innerHTML += createMessageBubble(chat.message, 'You', true);
                     chatInput.value = '';
                     chatMessages.scrollTop = chatMessages.scrollHeight;
+
+                    // Update sidebar last message & timestamp for your own message
+                    const li = document.getElementById(`conversation-${chat.conversation_id}`);
+                    if (li) {
+                        const lastMsgElem = li.querySelector('.last-message');
+                        const lastMsgTimeElem = li.querySelector('.last-message-time');
+
+                        if (lastMsgElem) {
+                            lastMsgElem.textContent = chat.message.length > 40 ? chat.message.substring(0, 40) + '...' : chat.message;
+                        }
+                        if (lastMsgTimeElem) {
+                            lastMsgTimeElem.textContent = 'Just now';
+                        }
+
+                        // Move to top
+                        const parent = li.parentNode;
+                        if (parent.firstChild !== li) {
+                            parent.insertBefore(li, parent.firstChild);
+                        }
+                    }
                 });
         });
     });

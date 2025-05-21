@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Models\Chat;
 use App\Models\Conversation;
+use App\Events\MessageSent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -44,38 +45,31 @@ class ChatController extends Controller
     }
 
 
-    public function getConversation($id)
+    public function getConversation($userId)
     {
-        $user = Auth::user();
-        $otherUserId = (int) $id;
+        $authUserId = auth()->id();
 
-        if ($user->id === $otherUserId) {
-            abort(403, 'Cannot chat with yourself.');
-        }
-
-        $conversation = Conversation::with(['userOne', 'userTwo'])->where(function ($q) use ($user, $otherUserId) {
-            $q->where('user_one_id', $user->id)->where('user_two_id', $otherUserId);
-        })->orWhere(function ($q) use ($user, $otherUserId) {
-            $q->where('user_one_id', $otherUserId)->where('user_two_id', $user->id);
-        })->first();
+        $conversation = Conversation::where(function ($q) use ($authUserId, $userId) {
+            $q->where('user_one_id', $authUserId)
+                ->where('user_two_id', $userId);
+        })->orWhere(function ($q) use ($authUserId, $userId) {
+            $q->where('user_two_id', $authUserId)
+                ->where('user_one_id', $userId);
+        })->with(['userOne', 'userTwo', 'chats.sender']) // make sure to eager load these
+            ->first();
 
         if (!$conversation) {
-            $conversation = Conversation::create([
-                'user_one_id' => $user->id,
-                'user_two_id' => $otherUserId,
-            ]);
-            // Eager load after creation as well
-            $conversation->load(['userOne', 'userTwo']);
+            return response()->json(['conversation' => null, 'messages' => []]);
         }
 
-        $messages = $conversation->chats()->with('sender')->orderBy('created_at')->get();
+        $chats = $conversation->chats()->with('sender')->get();
+        \Log::info('Conversation data:', $conversation->toArray());
 
         return response()->json([
             'conversation' => $conversation,
-            'messages' => $messages,
+            'messages' => $chats,
         ]);
     }
-
 
     public function sendMessage(Request $request)
     {
@@ -100,7 +94,32 @@ class ChatController extends Controller
             'message' => $request->message,
         ]);
 
+        // Load sender relationship so it's available in the event
+        $chat->load('sender');
+
+        // Broadcast the event to others listening on the private conversation channel
+        broadcast(new MessageSent($chat))->toOthers();
 
         return response()->json($chat);
+    }
+
+    public function getActiveConversations()
+    {
+        $userId = auth()->id();
+
+        // Get conversations where user is either user_one or user_two
+        // Join with latest chat date to order by recent activity
+        $conversations = Conversation::where('user_one_id', $userId)
+            ->orWhere('user_two_id', $userId)
+            ->with(['userOne', 'userTwo', 'chats' => function ($query) {
+                $query->latest()->limit(1); // eager load latest chat per conversation
+            }])
+            ->get()
+            ->sortByDesc(function ($conversation) {
+                // Use latest chat created_at or conversation created_at as fallback
+                return $conversation->chats->first()->created_at ?? $conversation->created_at;
+            });
+
+        return view('chat.index', compact('conversations'));
     }
 }
