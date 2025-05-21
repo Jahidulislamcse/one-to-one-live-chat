@@ -111,7 +111,6 @@
           color: ${isOwn ? 'white' : 'black'};
           box-shadow: 0 1px 3px rgba(0,0,0,0.1);
           border-radius: 15px;">
-          <div class="small fw-semibold mb-1">${senderName}</div>
           <div>${message}</div>
           <div class="text-end text-xs text-white-100 mt-1" style="font-size: 0.75rem; opacity: 0.7;">
             ${formatRelativeTime(timestamp)}
