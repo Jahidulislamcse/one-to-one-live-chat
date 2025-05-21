@@ -102,20 +102,25 @@
         return dayjs(timestamp).fromNow();
     }
 
-    function createMessageBubble(message, senderName, isOwn) {
+    function createMessageBubble(message, senderName, isOwn, timestamp) {
         return `
-        <div class="d-flex ${isOwn ? 'justify-content-end' : 'justify-content-start'} mb-3">
-          <div class="p-3 rounded" style="
-            max-width: 65%;
-            background-color: ${isOwn ? '#0d6efd' : '#e9ecef'};
-            color: ${isOwn ? 'white' : 'black'};
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-            border-radius: 15px;">
-            <div>${message}</div>
+      <div class="d-flex ${isOwn ? 'justify-content-end' : 'justify-content-start'} mb-3">
+        <div class="p-3 rounded" style="
+          max-width: 65%;
+          background-color: ${isOwn ? '#0d6efd' : '#e9ecef'};
+          color: ${isOwn ? 'white' : 'black'};
+          box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+          border-radius: 15px;">
+          <div class="small fw-semibold mb-1">${senderName}</div>
+          <div>${message}</div>
+          <div class="text-end text-xs text-white-100 mt-1" style="font-size: 0.75rem; opacity: 0.7;">
+            ${formatRelativeTime(timestamp)}
           </div>
         </div>
-      `;
+      </div>
+    `;
     }
+
 
     document.addEventListener('DOMContentLoaded', function() {
         const searchInput = document.getElementById('user-search');
@@ -177,7 +182,7 @@
 
             currentChannel.listen('MessageSent', (e) => {
                 if (e.sender_id !== authUserId) {
-                    chatMessages.innerHTML += createMessageBubble(e.message, e.sender.name, false);
+                    chatMessages.innerHTML += createMessageBubble(e.message, e.sender.name, false, e.created_at);
                     chatMessages.scrollTop = chatMessages.scrollHeight;
                 }
 
@@ -190,7 +195,7 @@
                         lastMsgElem.textContent = e.message.length > 40 ? e.message.substring(0, 40) + '...' : e.message;
                     }
                     if (lastMsgTimeElem) {
-                        lastMsgTimeElem.textContent = 'Just now';
+                        lastMsgTimeElem.textContent = formatRelativeTime(e.created_at || new Date().toISOString());
                     }
 
                     const parent = li.parentNode;
@@ -221,7 +226,7 @@
                     chatHeader.textContent = ` ${otherName}`;
 
                     chatMessages.innerHTML = data.messages.map(m =>
-                        createMessageBubble(m.message, m.sender.name, m.sender_id === authUserId)
+                        createMessageBubble(m.message, m.sender.name, m.sender_id === authUserId, m.created_at)
                     ).join('');
 
                     chatForm.style.display = 'flex';
@@ -249,7 +254,7 @@
                     })
                 }).then(res => res.json())
                 .then(chat => {
-                    chatMessages.innerHTML += createMessageBubble(chat.message, 'You', true);
+                    chatMessages.innerHTML += createMessageBubble(chat.message, 'You', true, chat.created_at || new Date().toISOString());
                     chatInput.value = '';
                     chatMessages.scrollTop = chatMessages.scrollHeight;
 

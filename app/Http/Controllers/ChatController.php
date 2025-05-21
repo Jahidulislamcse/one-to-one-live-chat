@@ -63,7 +63,6 @@ class ChatController extends Controller
         }
 
         $chats = $conversation->chats()->with('sender')->get();
-        \Log::info('Conversation data:', $conversation->toArray());
 
         return response()->json([
             'conversation' => $conversation,
